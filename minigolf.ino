@@ -1,5 +1,7 @@
 #include <Servo.h>
 #include <AccelStepper.h>
+#include "PID.h"
+#include <Encoder.h>
 
 AccelStepper stepper(AccelStepper::DRIVER, 23, 25);
 
@@ -9,8 +11,15 @@ const int pwm1 = 9;
 const int dir2 = 10;
 const int pwm2 = 11;
 
+const int launchEncoderA = 18;  // yellow
+const int launchEncoderB = 19;  // white
+
+PID Launch(0.0015, 0.0, 0.0002);
+Encoder LaunchEncoder(launchEncoderA, launchEncoderB);
+double launchTolerance = 40.0;
+
 // launcher hitter pins
-const int dir1Hitter = 27;
+const int dir1Hitter = 31;
 const int pwm1Hitter = 2;
 
 // right joystick pins
@@ -48,6 +57,10 @@ const int modePin = 3;  // channel 5
 
 int stepperPos = 1;
 int prevStepperPos = 1;
+
+int state = 0;
+
+double launchPower = 0;
 
 void setup() {
   pinMode(dir1, OUTPUT);
@@ -107,8 +120,8 @@ void loop() {
   leftValue = constrain(leftValue, 0, 250);
   rightValue = constrain(rightValue, 0, 250);
 
-  analogWrite(pwm1, leftValue);
-  analogWrite(pwm2, rightValue);
+  //analogWrite(pwm1, leftValue);
+  //analogWrite(pwm2, rightValue);
   digitalWrite(dir1, leftDir);
   digitalWrite(dir2, rightDir);
 
@@ -119,22 +132,25 @@ void loop() {
   if (mode == 0) {
     // servo lifter
     servoVal = pulseIn(LyPin, HIGH);
-    servoVal = map(servoVal, 985.0, 2000.0, 180, 0);
+    servoVal = map(servoVal, 985, 2000, 180, 0);
     //Serial.println("servo mode");
     lifter.write(servoVal);
   } else {
     // run hitter
     hitterVal = pulseIn(LyPin, HIGH);
-    hitterVal = map(hitterVal, 985.0, 2000.0, 0, 100);
+    hitterVal = map(hitterVal, 985, 2000, 0, 100);
+    //Serial.println(hitterVal);
 
     if (hitterVal > 50) {
-      // start hitter
-      digitalWrite(dir1Hitter, LOW);
-      analogWrite(pwm1Hitter, 255);
+      if (state == 0) {
+        Launch.setTarget(LaunchEncoder.read() + 9600 / 2);
+        state = 1;
+      }
     } else {
-      // stop hitter
-      digitalWrite(dir1Hitter, LOW);
-      analogWrite(pwm1Hitter, 0);
+      if (state == 1) {
+        Launch.setTarget(LaunchEncoder.read() + 9600 / 2);
+        state = 0;
+      }
     }
   }
 
@@ -156,11 +172,26 @@ void loop() {
   }
 
   if (stepperPos != prevStepperPos) {
-    stepper.moveTo(4000*(stepperPos-1));
-    while (stepper.distanceToGo() != 0) {
+    stepper.moveTo(4000 * (stepperPos - 1));
+    if (stepper.distanceToGo() != 0) {
       stepper.run();
+      launchPower = constrain(Launch.calculate(LaunchEncoder.read()), -1.0, 1.0);
+      setPower(dir1Hitter, pwm1Hitter, launchPower);
     }
   }
 
   prevStepperPos = stepperPos;
+
+  launchPower = constrain(Launch.calculate(LaunchEncoder.read()), -1.0, 1.0);
+  setPower(dir1Hitter, pwm1Hitter, launchPower);
+  Serial.println(" C-Encoder: " + String(LaunchEncoder.read()) + " C-Power: " + launchPower + " C-Error " + String(Launch.getError(LaunchEncoder.read())) + " " + Launch.getPIDPowers());
+}
+
+
+void setPower(int motorDir, int motorPWM, double power) {
+  int absPower = (int)(abs(constrain(power, -1.0, 1.0)) * 255.0);
+  int direct = (power < 0) ? HIGH : LOW;
+
+  digitalWrite(motorDir, -direct);
+  analogWrite(motorPWM, absPower);
 }
