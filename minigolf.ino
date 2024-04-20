@@ -20,7 +20,7 @@ const int RyPin = 6;  // channel 2
 // left joystick Y
 const int LyPin = 5;  // channel 3
 
-const int laserPin = 0;
+const int laserPin = 42;
 
 // stepper buttons
 const int stepperInputPin = 4;  // channel 4
@@ -73,7 +73,7 @@ void setup() {
   stepper.setMaxSpeed(40000);
   stepper.setAcceleration(10000);
 
-  Serial.begin(9600);
+  //Serial.begin(9600);
 }
 
 void loop() {
@@ -125,7 +125,6 @@ void loop() {
     // servo lifter
     servoVal = pulseIn(LyPin, HIGH);
     servoVal = map(servoVal, 985.0, 2000.0, 180, 0);
-    //Serial.println("servo mode");
     lifter.write(servoVal);
   } else {
     digitalWrite(laserPin, HIGH);
@@ -145,7 +144,6 @@ void loop() {
   }
 
   stepperInputVal = pulseIn(stepperInputPin, HIGH);
-  //stepperInputVal = map(stepperInputVal, 985, 20002, 0, 10000);
 
   if (stepperInputVal < 1100) {
     stepperPos = 1;
@@ -160,8 +158,6 @@ void loop() {
   } else if (stepperInputVal > 1900) {
     stepperPos = 6;
   }
-
-  Serial.println(8000*(stepperPos-1));
 
   if (stepperPos != prevStepperPos) {
     stepper.moveTo(8000*(stepperPos-1));
