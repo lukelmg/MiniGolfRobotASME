@@ -1,7 +1,5 @@
 #include <Servo.h>
 #include <AccelStepper.h>
-#include "PID.h"
-#include <Encoder.h>
 
 AccelStepper stepper(AccelStepper::DRIVER, 23, 25);
 
@@ -11,15 +9,8 @@ const int pwm1 = 9;
 const int dir2 = 10;
 const int pwm2 = 11;
 
-const int launchEncoderA = 18;  // yellow
-const int launchEncoderB = 19;  // white
-
-PID Launch(0.0015, 0.0, 0.0002);
-Encoder LaunchEncoder(launchEncoderA, launchEncoderB);
-double launchTolerance = 40.0;
-
 // launcher hitter pins
-const int dir1Hitter = 31;
+const int dir1Hitter = 27;
 const int pwm1Hitter = 2;
 
 // right joystick pins
@@ -28,6 +19,8 @@ const int RyPin = 6;  // channel 2
 
 // left joystick Y
 const int LyPin = 5;  // channel 3
+
+const int laserPin = 0;
 
 // stepper buttons
 const int stepperInputPin = 4;  // channel 4
@@ -55,18 +48,16 @@ int mode = 0;
 int modeVal = 0;
 const int modePin = 3;  // channel 5
 
-int stepperPos = 1;
-int prevStepperPos = 1;
-
-int state = 0;
-
-double launchPower = 0;
+long stepperPos = 1;
+long prevStepperPos = 1;
 
 void setup() {
   pinMode(dir1, OUTPUT);
   pinMode(pwm1, OUTPUT);
   pinMode(dir2, OUTPUT);
   pinMode(pwm2, OUTPUT);
+
+  pinMode(laserPin, OUTPUT);
 
   pinMode(dir1Hitter, OUTPUT);
   pinMode(pwm1Hitter, OUTPUT);
@@ -87,10 +78,10 @@ void setup() {
 
 void loop() {
   xval = pulseIn(RxPin, HIGH);
-  xvalcorrected = map(xval, 985, 2002, -245, 245);
+  xvalcorrected = map(xval, 985, 2002, -200, 200);
 
   yval = pulseIn(RyPin, HIGH);
-  yvalcorrected = map(yval, 985, 2002, 245, -245);
+  yvalcorrected = map(yval, 985, 2002, 200, -200);
 
   int leftValue = yvalcorrected + xvalcorrected;
   int rightValue = yvalcorrected - xvalcorrected;
@@ -120,8 +111,8 @@ void loop() {
   leftValue = constrain(leftValue, 0, 250);
   rightValue = constrain(rightValue, 0, 250);
 
-  //analogWrite(pwm1, leftValue);
-  //analogWrite(pwm2, rightValue);
+  analogWrite(pwm1, leftValue);
+  analogWrite(pwm2, rightValue);
   digitalWrite(dir1, leftDir);
   digitalWrite(dir2, rightDir);
 
@@ -130,27 +121,26 @@ void loop() {
   mode = map(modeVal, 1200, 1800, 0, 1);
 
   if (mode == 0) {
+    digitalWrite(laserPin, LOW);
     // servo lifter
     servoVal = pulseIn(LyPin, HIGH);
-    servoVal = map(servoVal, 985, 2000, 180, 0);
+    servoVal = map(servoVal, 985.0, 2000.0, 180, 0);
     //Serial.println("servo mode");
     lifter.write(servoVal);
   } else {
+    digitalWrite(laserPin, HIGH);
     // run hitter
     hitterVal = pulseIn(LyPin, HIGH);
-    hitterVal = map(hitterVal, 985, 2000, 0, 100);
-    //Serial.println(hitterVal);
+    hitterVal = map(hitterVal, 985.0, 2000.0, 0, 100);
 
     if (hitterVal > 50) {
-      if (state == 0) {
-        Launch.setTarget(LaunchEncoder.read() + 9600 / 2);
-        state = 1;
-      }
+      // start hitter
+      digitalWrite(dir1Hitter, LOW);
+      analogWrite(pwm1Hitter, 255);
     } else {
-      if (state == 1) {
-        Launch.setTarget(LaunchEncoder.read() + 9600 / 2);
-        state = 0;
-      }
+      // stop hitter
+      digitalWrite(dir1Hitter, LOW);
+      analogWrite(pwm1Hitter, 0);
     }
   }
 
@@ -167,31 +157,18 @@ void loop() {
     stepperPos = 4;
   } else if (stepperInputVal >= 1700 && stepperInputVal < 1900) {
     stepperPos = 5;
-  } else {
+  } else if (stepperInputVal > 1900) {
     stepperPos = 6;
   }
 
+  Serial.println(8000*(stepperPos-1));
+
   if (stepperPos != prevStepperPos) {
-    stepper.moveTo(4000 * (stepperPos - 1));
-    if (stepper.distanceToGo() != 0) {
+    stepper.moveTo(8000*(stepperPos-1));
+    while (stepper.distanceToGo() != 0) {
       stepper.run();
-      launchPower = constrain(Launch.calculate(LaunchEncoder.read()), -1.0, 1.0);
-      setPower(dir1Hitter, pwm1Hitter, launchPower);
     }
   }
 
   prevStepperPos = stepperPos;
-
-  launchPower = constrain(Launch.calculate(LaunchEncoder.read()), -1.0, 1.0);
-  setPower(dir1Hitter, pwm1Hitter, launchPower);
-  Serial.println(" C-Encoder: " + String(LaunchEncoder.read()) + " C-Power: " + launchPower + " C-Error " + String(Launch.getError(LaunchEncoder.read())) + " " + Launch.getPIDPowers());
-}
-
-
-void setPower(int motorDir, int motorPWM, double power) {
-  int absPower = (int)(abs(constrain(power, -1.0, 1.0)) * 255.0);
-  int direct = (power < 0) ? HIGH : LOW;
-
-  digitalWrite(motorDir, -direct);
-  analogWrite(motorPWM, absPower);
 }
